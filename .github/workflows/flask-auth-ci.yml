@@ -1,0 +1,40 @@
+name: Flask Auth App CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'  # Specify the exact Python version you're using
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flask flask-sqlalchemy flask-login python-dotenv
+          pip install pytest  # Install pytest for running tests
+
+      - name: Run tests
+        run: |
+          cd backend  # Change to the backend directory
+          python -m unittest test_app.py  # Run the tests using unittest
+
+      - name: Run Flask application (optional)
+        run: |
+          cd backend
+          python app.py &  # Start the Flask app in the background
+          sleep 5  # Give the app some time to start up
+          curl http://localhost:5000  # Make a request to check if the app is running
+          kill $!  # Stop the Flask app
