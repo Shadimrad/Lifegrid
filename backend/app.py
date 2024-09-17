@@ -4,6 +4,11 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import os
+from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
+from flask_login import login_required, current_user
+# from models import db, User, Score
+from datetime import datetime, timedelta
+
 
 # Get the path to the directory this file is in
 BASEDIR = os.path.abspath(os.path.dirname(__file__))
@@ -29,10 +34,75 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
+    scores = db.relationship('Score', backref='user', lazy=True)
+
+class Score(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    score = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'date', name='user_date_uc'),)
+
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+
+@app.route('/submit_score', methods=['POST'])
+@login_required
+def submit_score():
+    date = request.form.get('date')
+    score = request.form.get('score')
+    
+    if not date or not score:
+        return jsonify({'error': 'Date and score are required'}), 400
+    
+    try:
+        date = datetime.strptime(date, '%Y-%m-%d').date()
+        score = int(score)
+        if score < 1 or score > 10:
+            raise ValueError('Score must be between 1 and 10')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    existing_score = Score.query.filter_by(user_id=current_user.id, date=date).first()
+    if existing_score:
+        existing_score.score = score
+    else:
+        new_score = Score(user_id=current_user.id, date=date, score=score)
+        db.session.add(new_score)
+    
+    db.session.commit()
+    return jsonify({'message': 'Score submitted successfully'}), 200
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    today = datetime.utcnow().date()
+    start_date = today - timedelta(days=365)  # Get scores for the last year
+    scores = Score.query.filter(Score.user_id == current_user.id, 
+                                Score.date >= start_date).all()
+    
+    score_data = {score.date.strftime('%Y-%m-%d'): score.score for score in scores}
+    
+    return render_template('dashboard.html', score_data=score_data)
+
+@app.route('/get_scores')
+@login_required
+def get_scores():
+    days = int(request.args.get('days', 30))
+    end_date = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=days)
+    
+    scores = Score.query.filter(Score.user_id == current_user.id, 
+                                Score.date >= start_date,
+                                Score.date <= end_date).all()
+    
+    score_data = [{'date': score.date.strftime('%Y-%m-%d'), 'score': score.score} for score in scores]
+    return jsonify(score_data)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -58,11 +128,6 @@ def signup():
         return redirect(url_for('login'))
     return render_template('signup.html')
 
-
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    return f'Welcome, {current_user.username}!'
 
 @app.route('/logout')
 @login_required

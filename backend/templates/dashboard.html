@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Productivity Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .heatmap {
+            display: grid;
+            grid-template-columns: repeat(53, 1fr);
+            gap: 1px;
+        }
+        .heatmap-cell {
+            width: 10px;
+            height: 10px;
+            background-color: #ebedf0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome, {{ current_user.username }}!</h1>
+    
+    <h2>Submit Today's Score</h2>
+    <form id="scoreForm">
+        <input type="date" id="scoreDate" name="date" required>
+        <input type="number" id="scoreValue" name="score" min="1" max="10" required>
+        <button type="submit">Submit Score</button>
+    </form>
+
+    <h2>Your Productivity Heatmap</h2>
+    <div id="heatmap" class="heatmap"></div>
+
+    <h2>Your Average Scores</h2>
+    <canvas id="averageScoresChart"></canvas>
+
+    <script>
+        // Heatmap rendering
+        const heatmapContainer = document.getElementById('heatmap');
+        const scoreData = {{ score_data | tojson }};
+        
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 364);
+        
+        for (let i = 0; i < 365; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'heatmap-cell';
+            const currentDate = new Date(startDate);
+            currentDate.setDate(currentDate.getDate() + i);
+            const dateString = currentDate.toISOString().split('T')[0];
+            
+            if (scoreData[dateString]) {
+                const intensity = scoreData[dateString] * 25; // Adjust color intensity based on score
+                cell.style.backgroundColor = `rgb(0, ${intensity}, 0)`;
+            }
+            
+            heatmapContainer.appendChild(cell);
+        }
+
+        // Score submission
+        document.getElementById('scoreForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const response = await fetch('/submit_score', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            alert(result.message || result.error);
+        });
+
+        // Average scores chart
+        fetch('/get_scores?days=30')
+            .then(response => response.json())
+            .then(data => {
+                const dates = data.map(item => item.date);
+                const scores = data.map(item => item.score);
+
+                new Chart(document.getElementById('averageScoresChart'), {
+                    type: 'line',
+                    data: {
+                        labels: dates,
+                        datasets: [{
+                            label: 'Daily Score',
+                            data: scores,
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 10
+                            }
+                        }
+                    }
+                });
+            });
+    </script>
+</body>
+</html>
